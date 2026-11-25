@@ -1,5 +1,6 @@
 """Pruebas del coordinador distribuido sin APIs ni modelos reales."""
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -26,6 +27,21 @@ class HubTests(unittest.TestCase):
         two = self.app.enroll_worker({"invite": self.invite, "name": "Worker B"})
         self.worker_a = {"id": one["worker_id"]}
         self.worker_b = {"id": two["worker_id"]}
+
+    def test_hub_startup_migrates_existing_database_columns(self):
+        legacy_home = self.tmp / "legacy-hub"
+        init_hub(legacy_home)
+        db_path = legacy_home / "hub" / "hub.sqlite3"
+        with sqlite3.connect(db_path) as conn:
+            for column in ("integration_error", "integration_commit", "integration_branch",
+                           "integration_not_before", "integration_attempts", "integration_status"):
+                conn.execute(f"ALTER TABLE tasks DROP COLUMN {column}")
+            conn.commit()
+        migrated = HubApplication(legacy_home)
+        with migrated.db() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+        self.assertTrue({"integration_status", "integration_attempts", "integration_not_before",
+                         "integration_branch", "integration_commit", "integration_error"}.issubset(columns))
 
     def test_invite_is_limited_and_tokens_are_not_stored_plaintext(self):
         invite = self.app.create_invite({"uses": 1, "hours": 1})["token"]

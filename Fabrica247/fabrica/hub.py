@@ -213,6 +213,10 @@ class HubApplication:
         self.auto_push = bool(auto_push and self.integration_repo)
         self.base_branch = str(base_branch or "main").strip() or "main"
         self.folder, self.db_path, self.password_path, self.secret_path = hub_paths(self.home)
+        # Existing installations need additive SQLite migrations at Hub startup;
+        # requiring users to remember "hub init" after every update would break upgrades.
+        if self.db_path.exists():
+            init_hub(self.home)
         if not self.db_path.exists() or not self.secret_path.exists() or not self.password_path.exists():
             raise RuntimeError("Hub no inicializado. Ejecuta: python -m fabrica hub init")
         self.secret = self.secret_path.read_bytes()
