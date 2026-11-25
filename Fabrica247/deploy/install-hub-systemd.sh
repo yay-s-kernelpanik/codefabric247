@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$(command -v python3 || command -v python)"
 HOST="${FABRICA_HUB_HOST:-127.0.0.1}"
 PORT="${FABRICA_HUB_PORT:-8765}"
+[ -n "$PY" ] || { echo "No se encontró Python." >&2; exit 1; }
 UNIT_DIR="$HOME/.config/systemd/user"
 mkdir -p "$UNIT_DIR"
 cat > "$UNIT_DIR/fabrica247-hub.service" <<EOF
@@ -12,13 +13,17 @@ cat > "$UNIT_DIR/fabrica247-hub.service" <<EOF
 Description=Fabrica247 Hub dashboard and task coordinator
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory=$ROOT
-ExecStart=$PY -m fabrica hub serve --host $HOST --port $PORT
+WorkingDirectory="$(printf '%s' "$ROOT" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+ExecStart="$(printf '%s' "$PY" | sed 's/\\/\\\\/g; s/"/\\"/g')" -u -m fabrica hub serve --host "$(printf '%s' "$HOST" | sed 's/"/\\"/g')" --port "$(printf '%s' "$PORT" | sed 's/"/\\"/g')"
 Restart=always
 RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=60
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=default.target
@@ -26,4 +31,9 @@ EOF
 systemctl --user daemon-reload
 systemctl --user enable --now fabrica247-hub.service
 printf 'Hub service installed. Status: systemctl --user status fabrica247-hub\n'
-printf 'To survive logout, systemd user lingering may need to be enabled by your system administrator.\n'
+if command -v loginctl >/dev/null 2>&1 && loginctl show-user "${USER:-$(id -un)}" -p Linger 2>/dev/null | grep -q 'Linger=yes'; then
+  echo "Linger está activo."
+else
+  echo "Para mantener el Hub tras cerrar sesión y arrancarlo al boot:"
+  echo "  sudo loginctl enable-linger ${USER:-$(id -un)}"
+fi

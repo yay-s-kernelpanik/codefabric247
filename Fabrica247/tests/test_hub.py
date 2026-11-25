@@ -98,6 +98,36 @@ class HubTests(unittest.TestCase):
         self.assertEqual(row["integration_branch"], f"fabrica/task-{tid}")
         self.assertEqual(row["integration_commit"], "abc123")
 
+    def test_transient_integration_error_retries_with_backoff(self):
+        self.app.auto_push = True
+        self.app.integration_repo = self.tmp / "target-repo"
+        tid = self.app.create_task({"project_slug": "proyecto-a", "objective": "Editar archivo",
+                                    "task_type": "implementation"})["id"]
+        with self.app.db() as conn:
+            conn.execute("UPDATE tasks SET status='DONE',patch_text='patch',integration_status='QUEUED' WHERE id=?", (tid,))
+            conn.commit()
+        with patch("fabrica.integration.push_patch", side_effect=RuntimeError("temporary network failure")):
+            self.assertTrue(self.app.process_one_integration())
+        with self.app.db() as conn:
+            row = conn.execute("SELECT status,integration_status,integration_attempts,integration_not_before "
+                               "FROM tasks WHERE id=?", (tid,)).fetchone()
+            self.assertEqual(row["status"], "DONE")
+            self.assertEqual(row["integration_status"], "QUEUED")
+            self.assertEqual(row["integration_attempts"], 1)
+            self.assertTrue(row["integration_not_before"])
+            conn.execute("UPDATE tasks SET integration_not_before=? WHERE id=?",
+                         (stamp(utcnow() - timedelta(seconds=1)), tid))
+            conn.commit()
+        with patch("fabrica.integration.push_patch",
+                   return_value={"branch": f"fabrica/task-{tid}", "commit": "abc123", "already_pushed": False}):
+            self.assertTrue(self.app.process_one_integration())
+        with self.app.db() as conn:
+            row = conn.execute("SELECT integration_status,integration_attempts,integration_commit FROM tasks WHERE id=?",
+                               (tid,)).fetchone()
+        self.assertEqual(row["integration_status"], "PUSHED")
+        self.assertEqual(row["integration_attempts"], 1)
+        self.assertEqual(row["integration_commit"], "abc123")
+
     def test_interrupted_integration_is_requeued_after_hub_restart(self):
         tid = self.app.create_task({"project_slug": "proyecto-a", "objective": "Editar archivo",
                                     "task_type": "implementation"})["id"]

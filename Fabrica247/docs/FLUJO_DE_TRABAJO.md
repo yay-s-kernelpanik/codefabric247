@@ -22,6 +22,8 @@ Reiniciá el Hub tras modificar `.env`. El panel muestra los estados `QUEUED`, `
 - El integrador único serializa los cambios y obtiene el último commit de la rama base antes de aplicar cada patch.
 - Las tareas pueden avanzar en paralelo; los push se ejecutan de a uno.
 - Si el patch no aplica, se sale de `allowed_files` o intenta incluir archivos de entorno privados, se rechaza y se conserva para revisión.
+- Las ramas de tareas aún no incorporadas reservan sus rutas modificadas; otra tarea que intente tocar esos mismos archivos o rutas padre/hijo queda bloqueada como conflicto.
+- Los fallos transitorios de Git y red se reintentan con espera incremental hasta 8 veces; luego quedan como `FAILED` para intervención.
 - No se modifica la rama base, no se usa force-push y no se descartan cambios locales.
 - Una rama por tarea sirve para abrir Pull Requests separados. El Hub no fusiona automáticamente a `main`.
 

@@ -181,7 +181,7 @@ HUB_AUTO_PUSH=true
 HUB_BASE_BRANCH=main
 ```
 
-El Hub debe tener un clon Git con remoto `origin` autenticado para push. Cada tarea completada genera un commit y una rama `fabrica/task-ID`; la rama base nunca se modifica y no se usa force-push. Los conflictos quedan en el panel para reintento. Cada push ejecuta los workflows CI del repositorio, pero no equivale a aprobar ni fusionar el cambio.
+El Hub debe tener un clon Git con remoto `origin` autenticado para push. Cada tarea completada genera un commit y una rama `fabrica/task-ID`; la rama base nunca se modifica y no se usa force-push. Los cambios que chocan con otra rama de tarea pendiente quedan como `CONFLICT`; el integrador bloquea solapamientos de archivos hasta que la rama previa llegue a la base. Los errores temporales de Git/red se reintentan automáticamente con espera incremental (hasta 8 intentos); después quedan visibles para reintento manual. Cada push ejecuta los workflows CI del repositorio, pero no equivale a aprobar ni fusionar el cambio.
 
 En modo manual, el administrador puede descargar el patch y aplicarlo así:
 

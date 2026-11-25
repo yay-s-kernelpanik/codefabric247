@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   result TEXT,
   patch_text TEXT,
   integration_status TEXT NOT NULL DEFAULT 'NONE',
+  integration_attempts INTEGER NOT NULL DEFAULT 0,
+  integration_not_before TEXT,
   integration_branch TEXT,
   integration_commit TEXT,
   integration_error TEXT,
@@ -146,6 +148,8 @@ def init_hub(home: Path) -> tuple[Path, str]:
                 "task_prompt": "TEXT NOT NULL DEFAULT ''",
                 "cancel_requested": "INTEGER NOT NULL DEFAULT 0",
                 "integration_status": "TEXT NOT NULL DEFAULT 'NONE'",
+                "integration_attempts": "INTEGER NOT NULL DEFAULT 0",
+                "integration_not_before": "TEXT",
                 "integration_branch": "TEXT",
                 "integration_commit": "TEXT",
                 "integration_error": "TEXT",
@@ -558,7 +562,7 @@ class HubApplication:
 
     def recover_interrupted_integrations(self):
         with self.db() as conn:
-            conn.execute("UPDATE tasks SET integration_status='QUEUED',integration_error='Hub reiniciado durante integración',updated_at=? WHERE integration_status='INTEGRATING'", (stamp(),))
+            conn.execute("UPDATE tasks SET integration_status='QUEUED',integration_not_before=NULL,integration_error='Hub reiniciado durante integración',updated_at=? WHERE integration_status='INTEGRATING'", (stamp(),))
             conn.commit()
 
     def process_one_integration(self) -> bool:
@@ -568,12 +572,13 @@ class HubApplication:
             row = conn.execute("""SELECT t.*, p.slug AS project_slug FROM tasks t
                                   JOIN projects p ON p.id=t.project_id
                                   WHERE t.integration_status='QUEUED' AND t.status='DONE'
-                                  ORDER BY t.priority DESC,t.id ASC LIMIT 1""").fetchone()
+                                    AND (t.integration_not_before IS NULL OR t.integration_not_before<=?)
+                                  ORDER BY t.priority DESC,t.id ASC LIMIT 1""", (stamp(),)).fetchone()
             if not row:
                 conn.commit()
                 return False
             task = dict(row)
-            cur = conn.execute("UPDATE tasks SET integration_status='INTEGRATING',integration_error=NULL,updated_at=? WHERE id=? AND integration_status='QUEUED'", (stamp(), task['id']))
+            cur = conn.execute("UPDATE tasks SET integration_status='INTEGRATING',integration_not_before=NULL,integration_error=NULL,updated_at=? WHERE id=? AND integration_status='QUEUED'", (stamp(), task['id']))
             if cur.rowcount != 1:
                 conn.rollback()
                 return False
@@ -593,12 +598,21 @@ class HubApplication:
             branch, commit = result['branch'], result['commit']
         except IntegrationConflict as exc:
             state, error, branch, commit = 'CONFLICT', str(exc)[:2000], None, None
+            attempts, retry_at = int(task.get("integration_attempts") or 0), None
         except Exception as exc:
             log.exception("No se pudo integrar la tarea %s", task['id'])
-            state, error, branch, commit = 'FAILED', str(exc)[:2000], None, None
+            attempts = int(task.get("integration_attempts") or 0) + 1
+            if attempts < 8:
+                delay = min(900, 30 * (2 ** (attempts - 1)))
+                state, retry_at = 'QUEUED', stamp(utcnow() + timedelta(seconds=delay))
+            else:
+                state, retry_at = 'FAILED', None
+            error, branch, commit = str(exc)[:2000], None, None
+        else:
+            attempts, retry_at = int(task.get("integration_attempts") or 0), None
         with self.db() as conn:
-            conn.execute("UPDATE tasks SET integration_status=?,integration_branch=?,integration_commit=?,integration_error=?,updated_at=? WHERE id=?",
-                         (state, branch, commit, error, stamp(), task['id']))
+            conn.execute("UPDATE tasks SET integration_status=?,integration_attempts=?,integration_not_before=?,integration_branch=?,integration_commit=?,integration_error=?,updated_at=? WHERE id=?",
+                         (state, attempts, retry_at, branch, commit, error, stamp(), task['id']))
             conn.execute("INSERT INTO audit_log(event,detail,created_at) VALUES(?,?,?)",
                          ("task.integration." + state.lower(), f"task={task['id']} branch={branch or '-'}", stamp()))
             conn.commit()
@@ -615,7 +629,7 @@ class HubApplication:
                     raise ValueError("La tarea no tiene una integración reintentable")
                 if not self.auto_push or not self.integration_repo:
                     raise ValueError("Configurá HUB_AUTO_PUSH=true y TARGET_REPO en el Hub")
-                conn.execute("UPDATE tasks SET integration_status='QUEUED',integration_error=NULL,updated_at=? WHERE id=?", (stamp(), task_id))
+                conn.execute("UPDATE tasks SET integration_status='QUEUED',integration_attempts=0,integration_not_before=NULL,integration_error=NULL,updated_at=? WHERE id=?", (stamp(), task_id))
             elif action == "retry":
                 if status not in ("FAILED", "CANCELLED"):
                     raise ValueError("Solo se pueden reintentar tareas FAILED o CANCELLED")
