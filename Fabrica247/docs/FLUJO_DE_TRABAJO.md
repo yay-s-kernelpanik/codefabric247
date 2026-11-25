@@ -1,33 +1,43 @@
-# Flujo de trabajo diario con Fabrica247
+# Flujo de trabajo continuo con Fabrica247
 
-## Administrador
+## Integración automática por tarea
 
-1. Inicia el Hub y entra al dashboard.
-2. Comprueba que las PCs estén online.
-3. Crea tareas pequeñas con criterios de aceptación y límites.
-4. Revisa prioridad y qué Workers pueden recibir la tarea.
-5. Espera el patch.
-6. Descarga cada patch, comprueba `git apply --check`, lo revisa y corre tests.
-7. Integra en una rama, hace commit/push y abre Pull Request.
-8. Cuando se mergea, avisa a los Workers que actualicen su clon (`git pull --ff-only`) con el Worker detenido.
+Cada Worker ejecuta su IA en un worktree aislado y envía un patch al Hub. El Worker no necesita credenciales Git remotas. El Hub ejecuta una única cola de integración serializada: aplica el patch sobre la última versión de `origin/HUB_BASE_BRANCH`, crea un commit y publica una rama `fabrica/task-ID`.
 
-## Dueño de un Worker
+Activación en el equipo Hub (archivo `.env`):
 
-1. Comprueba que la VPN y el Hub estén accesibles.
-2. Actualiza el clon del proyecto si el administrador anunció un merge.
-3. Comprueba Git, OpenCode y el proveedor local/online.
-4. Inicia `worker doctor` para revisar la conexión.
-5. Inicia `worker run`.
-6. Puede pausar o detener localmente con `Ctrl+C`.
-7. Informa al administrador de problemas del equipo o de recursos.
+```dotenv
+TARGET_REPO=/ruta/al/clon-del-repositorio
+HUB_AUTO_PUSH=true
+HUB_BASE_BRANCH=main
+```
 
-## Ejemplo de división de tareas
+El usuario local del Hub necesita acceso Git de lectura y escritura a `origin`. Configurá el gestor de credenciales Git local en esa PC. No copies tokens ni claves SSH a los Workers, ni los guardes en el proyecto.
 
-| Worker | Tarea posible | Riesgo de conflicto |
-|---|---|---|
-| A | Documentar `docs/` | Bajo si otros no editan esos documentos |
-| B | Agregar tests de `src/parser/` | Bajo si trabaja en tests separados |
-| C | Revisar rendimiento de `src/render/` (solo lectura) | Bajo |
-| D | Refactorizar `src/parser/` | Alto si otro Worker también edita parser |
+Reiniciá el Hub tras modificar `.env`. El panel muestra los estados `QUEUED`, `INTEGRATING`, `PUSHED`, `CONFLICT` y `FAILED`. Si una integración falla, el patch queda guardado y se puede reintentar desde el dashboard.
 
-Antes de asignar tareas a varios equipos, verificá que no estén tocando los mismos archivos.
+## Aislamiento y conflictos
+
+- Cada Worker tiene su propio worktree y no modifica directamente la copia central del Hub.
+- El integrador único serializa los cambios y obtiene el último commit de la rama base antes de aplicar cada patch.
+- Las tareas pueden avanzar en paralelo; los push se ejecutan de a uno.
+- Si el patch no aplica, se sale de `allowed_files` o intenta incluir archivos de entorno privados, se rechaza y se conserva para revisión.
+- No se modifica la rama base, no se usa force-push y no se descartan cambios locales.
+- Una rama por tarea sirve para abrir Pull Requests separados. El Hub no fusiona automáticamente a `main`.
+
+## Operación 24/7
+
+1. Mantener el Hub activo en una PC con conexión estable y el repositorio central clonado.
+2. Mantener los Workers conectados por VPN privada.
+3. Definir tareas pequeñas con rutas permitidas, entregables y criterios de aceptación.
+4. Comprobar el estado del agente y la integración en el dashboard.
+5. Revisar los resultados del CI y agrupar cambios compatibles mediante Pull Requests.
+6. Mantener copias de seguridad del directorio `hub/` y del repositorio central.
+
+## Recuperación
+
+Si el Hub reinicia mientras una tarea está en integración, recupera su estado y vuelve a procesar el patch. Si el commit ya existe localmente pero el push falló, intenta publicar ese mismo commit; si la rama ya se publicó, detecta el marcador de tarea y evita crear un segundo commit. Si surge un conflicto, el patch original sigue disponible.
+
+## Dueños de Workers
+
+Cada amigo mantiene su propia configuración, API key y token de Worker. Debe autorizar localmente la edición del repositorio y puede detener el Worker en cualquier momento. Un worktree no es un sandbox: el agente trabaja con los permisos del usuario local. La integración remota administra cambios Git del proyecto, no el sistema operativo de las otras PCs.
