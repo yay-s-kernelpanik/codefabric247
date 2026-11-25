@@ -1,0 +1,51 @@
+{
+  "note": "Servicios auxiliares opcionales. Pon enabled=true SOLO tras confirmar el comando real de cada uno. Copia este archivo a services.local.json para tener tu version privada (esta ignorada por git).",
+  "services": [
+    {
+      "name": "hyperrouter",
+      "enabled": false,
+      "required": true,
+      "note": "NO VERIFICADO: confirma en el README de HyperRouter el comando que lo ejecuta como servidor SIN interfaz (la TUI curses necesita terminal). Si ya lo ejecutas tu aparte, deja enabled=false: Fabrica247 solo necesita que HYPERROUTER_URL responda.",
+      "cwd": "~/hyperRouter",
+      "command": "python hyperrouter --serve",
+      "health_url": "http://127.0.0.1:8787/v1/models",
+      "health_timeout": 60,
+      "install": {
+        "repo": "https://github.com/9ssault/hyperRouter.git",
+        "dir": "~/hyperRouter",
+        "commands": []
+      }
+    },
+    {
+      "name": "kiro-gateway",
+      "enabled": false,
+      "required": false,
+      "note": "NO VERIFICADO. Proxy no oficial: revisa sus terminos y como maneja tus credenciales antes de habilitarlo. Debe usar el python de SU propio venv.",
+      "cwd": "~/kiro-gateway",
+      "command": "./.venv/bin/python main.py",
+      "health_url": null,
+      "install": {
+        "repo": "https://github.com/jwadow/kiro-gateway.git",
+        "dir": "~/kiro-gateway",
+        "commands": ["python3 -m venv .venv", "./.venv/bin/pip install -r requirements.txt"]
+      }
+    },
+    {
+      "name": "freebuff2api-proxy",
+      "enabled": false,
+      "required": false,
+      "note": "NO VERIFICADO. Proxy no oficial: mismas precauciones.",
+      "command": "freebuff2api-proxy serve",
+      "health_url": null,
+      "install": {"commands": ["npm install -g freebuff2api-proxy"], "dir": "."}
+    },
+    {
+      "name": "ollama",
+      "enabled": false,
+      "required": false,
+      "command": "ollama serve",
+      "health_url": "http://127.0.0.1:11434/api/tags",
+      "health_timeout": 30
+    }
+  ]
+}

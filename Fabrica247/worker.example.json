@@ -1,0 +1,65 @@
+{
+  "hub_url": "https://tu-hub.example.com",
+  "worker_id": "lo-completa-worker-join",
+  "worker_name": "PC-amigo-01",
+  "projects": {
+    "mi-proyecto": {
+      "path": "/ruta/local/al/repositorio",
+      "enabled": true
+    }
+  },
+  "agent": {
+    "enabled": true,
+    "command": "opencode",
+    "model": "router/auto",
+    "providers": [
+      {
+        "id": "router",
+        "name": "Mi router OpenAI-compatible",
+        "base_url": "http://127.0.0.1:8787/v1",
+        "api_key_env": "FABRICA_ROUTER_API_KEY",
+        "models": {
+          "auto": {
+            "name": "Auto / failover del router"
+          }
+        },
+        "package": "@opencode/ai/providers/openai-compatible"
+      },
+      {
+        "id": "ollama",
+        "name": "Ollama local",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "api_key_env": "",
+        "models": {
+          "qwen2.5-coder:3b": {
+            "name": "Qwen 2.5 Coder 3B"
+          }
+        },
+        "package": "@opencode/ai/providers/openai-compatible"
+      },
+      {
+        "id": "cloud-example",
+        "name": "API OpenAI-compatible (ejemplo)",
+        "base_url": "https://api.example.com/v1",
+        "api_key_env": "CLOUD_EXAMPLE_API_KEY",
+        "models": {
+          "model-id": {
+            "name": "Modelo remoto"
+          }
+        },
+        "package": "@opencode/ai/providers/openai-compatible"
+      }
+    ],
+    "task_timeout": 900,
+    "allow_remote_code": false,
+    "allow_shell": false,
+    "local_prompt": ""
+  },
+  "poll_seconds": 10,
+  "heartbeat_seconds": 20,
+  "env_file": ".worker.env",
+  "token_file": "worker.token",
+  "remote_control": {
+    "enabled": false
+  }
+}

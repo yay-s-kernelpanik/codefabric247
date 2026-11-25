@@ -1,0 +1,46 @@
+# Instrucciones del proyecto
+
+> Plantilla para copiar a la raíz del REPOSITORIO OBJETIVO y completar. No la uses sin reemplazar los campos entre corchetes.
+
+## Propósito
+[COMPLETAR: qué hace el proyecto, quién lo usa y cuál es su objetivo principal.]
+
+## Estado actual
+[COMPLETAR: rama estable, versión, funciones listas y trabajo pendiente.]
+
+## Arquitectura
+[COMPLETAR: módulos principales, responsabilidades y relación entre carpetas.]
+
+## Requisitos
+[COMPLETAR: sistemas operativos, lenguajes, versiones, dependencias y hardware si aplica.]
+
+## Comandos oficiales
+- Instalar: [COMPLETAR]
+- Ejecutar: [COMPLETAR]
+- Tests: [COMPLETAR]
+- Linter/formato: [COMPLETAR]
+- Build/paquete: [COMPLETAR]
+
+## Convenciones
+- Antes de editar, inspeccionar la estructura, el README, el código relacionado y los tests.
+- Hacer cambios mínimos y compatibles con el diseño existente.
+- No inventar opciones, APIs, dependencias ni comandos.
+- No borrar, resetear ni sobrescribir trabajo del usuario.
+- No editar archivos generados si existe una fuente que debe modificarse.
+- Agregar o actualizar pruebas para cada cambio que altere comportamiento.
+- Mantener documentación y ejemplos sincronizados con la implementación.
+
+## Seguridad y límites
+- No incluir claves API, contraseñas, cookies, tokens ni datos privados en el repo.
+- No ejecutar comandos destructivos ni cambiar configuraciones del sistema sin autorización explícita.
+- No hacer push ni merge a la rama principal sin revisión humana.
+- No leer ni modificar archivos ajenos al repositorio y al objetivo de la tarea.
+- No afirmar que una prueba pasó si no se ejecutó realmente.
+
+## Criterios para terminar una tarea
+Al finalizar, informar:
+1. Qué se cambió y por qué.
+2. Lista de archivos modificados.
+3. Pruebas ejecutadas y resultados exactos.
+4. Pruebas no ejecutadas y motivo.
+5. Riesgos, limitaciones y próximos pasos.

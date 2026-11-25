@@ -1,0 +1,30 @@
+{
+  "edition": "windows-heavy",
+  "platform": "windows",
+  "role": "worker",
+  "local_ai": true,
+  "description": "Worker pesado: usa Ollama local. El propietario instala Ollama y descarga su modelo.",
+  "agent": {
+    "command": "opencode",
+    "model": "ollama/qwen2.5-coder:3b",
+    "providers": [
+      {
+        "id": "ollama",
+        "name": "Ollama local",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "api_key_env": "",
+        "models": {
+          "qwen2.5-coder:3b": {
+            "name": "Qwen 2.5 Coder 3B"
+          }
+        },
+        "package": "@opencode/ai/providers/openai-compatible"
+      }
+    ],
+    "allow_remote_code": false,
+    "allow_shell": false
+  },
+  "remote_control": {
+    "enabled": false
+  }
+}

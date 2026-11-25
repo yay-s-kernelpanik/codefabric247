@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fabrica247 · Hub</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <main id="login" class="login-wrap hidden">
+    <form id="login-form" class="login-card">
+      <div class="brand-mark">F247</div>
+      <h1>Fabrica247</h1>
+      <p>Centro de control distribuido</p>
+      <label>Contraseña de administrador<input id="password" type="password" autocomplete="current-password" required></label>
+      <button class="primary" type="submit">Entrar</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </main>
+
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">F247</div><div><strong>Fabrica247</strong><small>Distributed agent hub</small></div></div>
+      <div class="top-actions"><span class="live-dot">Hub activo</span><button id="refresh" class="quiet">Actualizar</button><button id="logout" class="quiet">Salir</button></div>
+    </header>
+
+    <section class="hero">
+      <div><span class="eyebrow">CONTROL PLANE</span><h1>Tu fábrica, todas tus PCs.</h1><p>Organizá proyectos, distribuí tareas y elegí qué agentes tienen prioridad en cada proyecto.</p></div>
+      <div class="hero-note"><strong>Conexiones salientes</strong><span>Los workers consultan el Hub. No necesitan puertos entrantes.</span></div>
+    </section>
+
+    <section class="stats" id="stats"></section>
+
+    <section class="grid two">
+      <article class="panel">
+        <div class="panel-head"><div><span class="eyebrow">01 · PROYECTOS</span><h2>Proyectos</h2></div></div>
+        <form id="project-form" class="inline-form">
+          <label>Nombre<input id="project-name" required maxlength="100" placeholder="Mi proyecto"></label>
+          <label>Identificador<input id="project-slug" maxlength="48" placeholder="mi-proyecto"></label>
+          <button class="primary" type="submit">Crear proyecto</button>
+        </form>
+        <div id="projects" class="project-list empty">Todavía no hay proyectos.</div>
+        <p class="muted">Las instrucciones de cada proyecto se editan desde su tarjeta una vez creado.</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><div><span class="eyebrow">02 · COLA</span><h2>Enviar una tarea</h2></div></div>
+        <form id="task-form" class="form-stack">
+          <label>Proyecto<select id="task-project" required><option value="">Creá un proyecto primero</option></select></label>
+          <label>Objetivo<textarea id="task-objective" rows="4" maxlength="5000" required placeholder="Describe el trabajo que deben realizar los agentes..."></textarea></label>
+          <label>Instrucciones adicionales para esta tarea (opcional)<textarea id="task-prompt" rows="3" maxlength="8000" placeholder="Condiciones, contexto y criterios adicionales..."></textarea></label>
+          <div class="form-row">
+            <label>Tipo<select id="task-type"><option value="implementation">Implementación</option><option value="reasoning">Análisis / solo lectura</option><option value="light">Tarea ligera</option></select></label>
+            <label>Prioridad<input id="task-priority" type="number" min="-100" max="100" value="0"></label>
+            <label>Reintentos<input id="task-retries" type="number" min="0" max="10" value="2"></label>
+          </div>
+          <label>Archivos permitidos (opcional)<input id="task-files" placeholder="src/, README.md"></label>
+          <button class="primary" type="submit">Agregar a la cola</button>
+        </form>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head split"><div><span class="eyebrow">03 · RED DE TRABAJO</span><h2>Agentes y prioridades por proyecto</h2><p class="muted">Controlá prioridades, pausa/reanudación e instrucciones por PC. La pausa remota requiere consentimiento explícito del propietario.</p></div><button id="invite" class="primary">＋ Invitar una PC</button></div>
+      <div id="invite-result" class="invite-result hidden"></div>
+      <div class="table-wrap"><table><thead id="worker-head"></thead><tbody id="workers"><tr><td class="empty">Todavía no hay PCs conectadas.</td></tr></tbody></table></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><div><span class="eyebrow">04 · EJECUCIÓN</span><h2>Cola de tareas</h2></div></div>
+      <div class="table-wrap"><table><thead><tr><th>ID</th><th>Proyecto</th><th>Objetivo</th><th>Instrucciones de tarea</th><th>Prioridad</th><th>Estado</th><th>Agente</th><th>Rama / resultado</th><th>Acción</th></tr></thead><tbody id="tasks"><tr><td colspan="9" class="empty">Todavía no hay tareas.</td></tr></tbody></table></div>
+    </section>
+    <footer>Fabrica247 · Hub v3 · Los propietarios mantienen la capacidad de detener y revocar su worker.</footer>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

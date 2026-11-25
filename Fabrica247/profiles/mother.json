@@ -1,0 +1,29 @@
+{
+  "edition": "mother",
+  "role": "hub-admin-plus-local-worker",
+  "description": "PC principal: Hub central, panel de administración, prompts y worker local opcional.",
+  "hub": {
+    "host": "127.0.0.1",
+    "port": 8765
+  },
+  "worker": {
+    "local": true,
+    "remote_control": {
+      "enabled": true
+    },
+    "allow_remote_code": true,
+    "allow_shell": false
+  },
+  "admin_capabilities": [
+    "project_prompts",
+    "task_prompts",
+    "worker_prompts",
+    "pause_resume",
+    "priorities",
+    "invites",
+    "revoke_workers",
+    "task_queue",
+    "patch_review",
+    "cancel_running_tasks"
+  ]
+}

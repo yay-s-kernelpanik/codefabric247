@@ -1,0 +1,30 @@
+{
+  "edition": "linux",
+  "platform": "linux",
+  "role": "worker",
+  "local_ai": false,
+  "agent": {
+    "command": "opencode",
+    "model": "router/auto",
+    "providers": [
+      {
+        "id": "router",
+        "name": "Router / proveedor OpenAI-compatible",
+        "base_url": "http://127.0.0.1:8787/v1",
+        "api_key_env": "FABRICA_ROUTER_API_KEY",
+        "models": {
+          "auto": {
+            "name": "Auto"
+          }
+        },
+        "package": "@opencode/ai/providers/openai-compatible"
+      }
+    ],
+    "allow_remote_code": false,
+    "allow_shell": false
+  },
+  "remote_control": {
+    "enabled": false
+  },
+  "description": "Worker Linux: asistente para seleccionar APIs online o IA local."
+}

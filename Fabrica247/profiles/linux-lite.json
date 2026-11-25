@@ -1,0 +1,30 @@
+{
+  "edition": "linux-lite",
+  "platform": "linux",
+  "role": "worker",
+  "local_ai": false,
+  "description": "Worker liviano: usa proveedores online configurados por el propietario; no instala modelos locales.",
+  "agent": {
+    "command": "opencode",
+    "model": "router/auto",
+    "providers": [
+      {
+        "id": "router",
+        "name": "Router / OpenCode-compatible",
+        "base_url": "http://127.0.0.1:8787/v1",
+        "api_key_env": "FABRICA_ROUTER_API_KEY",
+        "models": {
+          "auto": {
+            "name": "Auto"
+          }
+        },
+        "package": "@opencode/ai/providers/openai-compatible"
+      }
+    ],
+    "allow_remote_code": false,
+    "allow_shell": false
+  },
+  "remote_control": {
+    "enabled": false
+  }
+}
