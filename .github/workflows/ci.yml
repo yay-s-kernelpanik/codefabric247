@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "Fabrica247/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "Fabrica247/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests · ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.9", "3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: Fabrica247
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile Python sources
+        run: python -m compileall -q fabrica tests build_release.py
+      - name: Run unit and smoke tests
+        run: python -m unittest discover -s tests -v
+      - name: Check JSON profiles
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in Path("profiles").glob("*.json"):
+              json.loads(path.read_text(encoding="utf-8"))
+              print("OK", path)
+          PY
