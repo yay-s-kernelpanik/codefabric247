@@ -3,10 +3,10 @@ import subprocess,tempfile,unittest
 from pathlib import Path
 from fabrica.integration import IntegrationConflict,push_patch
 
-def git(args,cwd):
+def git(args,cwd,strip=True):
     p=subprocess.run(["git"]+list(args),cwd=str(cwd),capture_output=True,text=True)
     if p.returncode: raise AssertionError(p.stderr or p.stdout)
-    return p.stdout.strip()
+    return p.stdout.strip() if strip else p.stdout
 
 class IntegrationTests(unittest.TestCase):
     def setUp(self):
@@ -23,7 +23,10 @@ class IntegrationTests(unittest.TestCase):
     def make_patch(self,path,content):
         target=self.worker/path; target.parent.mkdir(parents=True,exist_ok=True)
         target.write_text(content,encoding="utf-8"); git(["add",path],self.worker); git(["commit","-m","worker"],self.worker)
-        return git(["diff","--binary",self.base+"..HEAD"],self.worker)
+        patch=git(["diff","--binary",self.base+"..HEAD"],self.worker,strip=False)
+        if not patch.endswith("\n"):
+            raise AssertionError("git diff debe conservar el salto de línea final")
+        return patch
     def test_push_is_idempotent_and_never_updates_main(self):
         patch=self.make_patch("src/module.py","print('ok')\n")
         result=push_patch(self.repo,42,"Add module",patch,"src/","main")
