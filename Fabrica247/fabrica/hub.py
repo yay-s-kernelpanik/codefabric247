@@ -83,6 +83,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   branch_name TEXT,
   result TEXT,
   patch_text TEXT,
+  integration_status TEXT NOT NULL DEFAULT 'NONE',
+  integration_attempts INTEGER NOT NULL DEFAULT 0,
+  integration_not_before TEXT,
+  integration_branch TEXT,
+  integration_commit TEXT,
+  integration_error TEXT,
   last_error TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -141,6 +147,12 @@ def init_hub(home: Path) -> tuple[Path, str]:
                 "patch_text": "TEXT",
                 "task_prompt": "TEXT NOT NULL DEFAULT ''",
                 "cancel_requested": "INTEGER NOT NULL DEFAULT 0",
+                "integration_status": "TEXT NOT NULL DEFAULT 'NONE'",
+                "integration_attempts": "INTEGER NOT NULL DEFAULT 0",
+                "integration_not_before": "TEXT",
+                "integration_branch": "TEXT",
+                "integration_commit": "TEXT",
+                "integration_error": "TEXT",
             },
         }
         for table, additions in migrations.items():
@@ -195,9 +207,16 @@ def _read_json(handler):
 
 
 class HubApplication:
-    def __init__(self, home: Path):
+    def __init__(self, home: Path, integration_repo=None, auto_push=False, base_branch="main"):
         self.home = home.expanduser().resolve()
+        self.integration_repo = Path(integration_repo).expanduser().resolve() if integration_repo else None
+        self.auto_push = bool(auto_push and self.integration_repo)
+        self.base_branch = str(base_branch or "main").strip() or "main"
         self.folder, self.db_path, self.password_path, self.secret_path = hub_paths(self.home)
+        # Existing installations need additive SQLite migrations at Hub startup;
+        # requiring users to remember "hub init" after every update would break upgrades.
+        if self.db_path.exists():
+            init_hub(self.home)
         if not self.db_path.exists() or not self.secret_path.exists() or not self.password_path.exists():
             raise RuntimeError("Hub no inicializado. Ejecuta: python -m fabrica hub init")
         self.secret = self.secret_path.read_bytes()
@@ -516,6 +535,7 @@ class HubApplication:
         if len(patch_text.encode("utf-8")) > 4_500_000:
             patch_text = ""
             error = (error + "\nEl diff supera el límite de 4.5 MB; se conservó solo el resultado.").strip()
+        integration_status = ("QUEUED" if self.auto_push else "PATCH_READY") if outcome == "done" and patch_text else "NONE"
         with self.db() as conn:
             row = conn.execute("SELECT * FROM tasks WHERE id=? AND assigned_worker=? AND status='RUNNING'",
                                (task_id, worker["id"])).fetchone()
@@ -535,24 +555,92 @@ class HubApplication:
                 not_before = None
             conn.execute("""UPDATE tasks SET status=?,assigned_worker=NULL,lease_until=NULL,not_before=?,cancel_requested=0,
                             attempts=CASE WHEN ?='infra' THEN MAX(attempts-1,0) ELSE attempts END,
-                            branch_name=?,result=?,patch_text=?,last_error=?,updated_at=? WHERE id=?""",
-                         (status, not_before, outcome, branch or None, result or None, patch_text or None, error or None, stamp(), task_id))
+                            branch_name=?,result=?,patch_text=?,integration_status=?,integration_attempts=0,integration_not_before=NULL,
+                            integration_branch=NULL,integration_commit=NULL,integration_error=NULL,last_error=?,updated_at=? WHERE id=?""",
+                         (status, not_before, outcome, branch or None, result or None, patch_text or None,
+                          integration_status, error or None, stamp(), task_id))
             conn.execute("INSERT INTO audit_log(event,detail,created_at) VALUES(?,?,?)",
                          ("task.finished", f"task={task_id} outcome={outcome} status={status} worker={worker['id']}", stamp()))
             conn.commit()
         return {"ok": True, "status": status}
 
+    def recover_interrupted_integrations(self):
+        with self.db() as conn:
+            conn.execute("UPDATE tasks SET integration_status='QUEUED',integration_not_before=NULL,integration_error='Hub reiniciado durante integración',updated_at=? WHERE integration_status='INTEGRATING'", (stamp(),))
+            conn.commit()
+
+    def process_one_integration(self) -> bool:
+        """Claim and publish one task branch; called by the Hub's single integrator."""
+        with self.db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("""SELECT t.*, p.slug AS project_slug FROM tasks t
+                                  JOIN projects p ON p.id=t.project_id
+                                  WHERE t.integration_status='QUEUED' AND t.status='DONE'
+                                    AND (t.integration_not_before IS NULL OR t.integration_not_before<=?)
+                                  ORDER BY t.priority DESC,t.id ASC LIMIT 1""", (stamp(),)).fetchone()
+            if not row:
+                conn.commit()
+                return False
+            task = dict(row)
+            cur = conn.execute("UPDATE tasks SET integration_status='INTEGRATING',integration_not_before=NULL,integration_error=NULL,updated_at=? WHERE id=? AND integration_status='QUEUED'", (stamp(), task['id']))
+            if cur.rowcount != 1:
+                conn.rollback()
+                return False
+            reserved_branches = [
+                item["integration_branch"] for item in conn.execute(
+                    "SELECT integration_branch FROM tasks WHERE integration_status='PUSHED' "
+                    "AND integration_branch IS NOT NULL AND id<>?", (task["id"],)
+                )
+            ]
+            conn.commit()
+        from .integration import IntegrationConflict, push_patch
+        try:
+            result = push_patch(self.integration_repo, int(task['id']), task['objective'],
+                                task.get('patch_text') or '', task.get('allowed_files'), self.base_branch,
+                                reserved_branches=reserved_branches)
+            state, error = 'PUSHED', None
+            branch, commit = result['branch'], result['commit']
+        except IntegrationConflict as exc:
+            state, error, branch, commit = 'CONFLICT', str(exc)[:2000], None, None
+            attempts, retry_at = int(task.get("integration_attempts") or 0), None
+        except Exception as exc:
+            log.exception("No se pudo integrar la tarea %s", task['id'])
+            attempts = int(task.get("integration_attempts") or 0) + 1
+            if attempts < 8:
+                delay = min(900, 30 * (2 ** (attempts - 1)))
+                state, retry_at = 'QUEUED', stamp(utcnow() + timedelta(seconds=delay))
+            else:
+                state, retry_at = 'FAILED', None
+            error, branch, commit = str(exc)[:2000], None, None
+        else:
+            attempts, retry_at = int(task.get("integration_attempts") or 0), None
+        with self.db() as conn:
+            conn.execute("UPDATE tasks SET integration_status=?,integration_attempts=?,integration_not_before=?,integration_branch=?,integration_commit=?,integration_error=?,updated_at=? WHERE id=?",
+                         (state, attempts, retry_at, branch, commit, error, stamp(), task['id']))
+            conn.execute("INSERT INTO audit_log(event,detail,created_at) VALUES(?,?,?)",
+                         ("task.integration." + state.lower(), f"task={task['id']} branch={branch or '-'}", stamp()))
+            conn.commit()
+        return True
+
     def task_action(self, task_id: int, action: str):
         with self.db() as conn:
-            row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            row = conn.execute("SELECT status,integration_status,patch_text FROM tasks WHERE id=?", (task_id,)).fetchone()
             if not row:
                 raise LookupError("Tarea inexistente")
             status = row["status"]
-            if action == "retry":
+            if action == "retry-integration":
+                if status != "DONE" or row["integration_status"] not in ("FAILED", "CONFLICT", "PATCH_READY") or not row["patch_text"]:
+                    raise ValueError("La tarea no tiene una integración reintentable")
+                if not self.auto_push or not self.integration_repo:
+                    raise ValueError("Configurá HUB_AUTO_PUSH=true y TARGET_REPO en el Hub")
+                conn.execute("UPDATE tasks SET integration_status='QUEUED',integration_attempts=0,integration_not_before=NULL,integration_error=NULL,updated_at=? WHERE id=?", (stamp(), task_id))
+            elif action == "retry":
                 if status not in ("FAILED", "CANCELLED"):
                     raise ValueError("Solo se pueden reintentar tareas FAILED o CANCELLED")
                 conn.execute("""UPDATE tasks SET status='PENDING',attempts=0,assigned_worker=NULL,
                                 lease_until=NULL,not_before=NULL,cancel_requested=0,last_error=NULL,result=NULL,patch_text=NULL,
+                                integration_status='NONE',integration_attempts=0,integration_not_before=NULL,
+                                integration_branch=NULL,integration_commit=NULL,integration_error=NULL,
                                 branch_name=NULL,updated_at=? WHERE id=?""",
                              (stamp(), task_id))
             elif action == "cancel":
@@ -573,6 +661,8 @@ class HubApplication:
             else:
                 raise ValueError("Acción no válida")
             conn.commit()
+        if action == "retry-integration":
+            return {"ok": True, "status": "QUEUED"}
         return {"ok": True, "status": "PENDING" if action == "retry" else ("CANCEL_REQUESTED" if status == "RUNNING" else "CANCELLED")}
 
 
@@ -715,7 +805,7 @@ def make_handler(app: HubApplication):
                         cur = conn.execute("UPDATE workers SET enabled=0,status='REVOKED' WHERE id=?", (match.group(1),))
                         conn.commit()
                     self._send(200, {"ok": cur.rowcount == 1}); return
-                match = re.fullmatch(r"/api/admin/tasks/(\d+)/(retry|cancel)", path)
+                match = re.fullmatch(r"/api/admin/tasks/(\d+)/(retry-integration|retry|cancel)", path)
                 if match:
                     self._send(200, app.task_action(int(match.group(1)), match.group(2))); return
                 self._error(404, "No encontrado")
@@ -800,19 +890,41 @@ def make_handler(app: HubApplication):
     return Handler
 
 
-def serve_hub(home: Path, host="127.0.0.1", port=8765):
-    app = HubApplication(home)
+def serve_hub(home: Path, host="127.0.0.1", port=8765, integration_repo=None, auto_push=False, base_branch="main"):
+    if auto_push and not integration_repo:
+        raise RuntimeError("HUB_AUTO_PUSH=true requiere TARGET_REPO apuntando al clon Git del Hub")
+    app = HubApplication(home, integration_repo=integration_repo, auto_push=auto_push, base_branch=base_branch)
+    app.recover_interrupted_integrations()
     server = ThreadingHTTPServer((host, int(port)), make_handler(app))
     server.daemon_threads = True
+    integration_stop = threading.Event()
+    integration_thread = None
+    if app.auto_push:
+        def _integrate_loop():
+            while not integration_stop.wait(2):
+                try:
+                    while app.process_one_integration():
+                        pass
+                except Exception:
+                    log.exception("Bucle de integración interrumpido; se reintentará")
+        integration_thread = threading.Thread(target=_integrate_loop, name="fabrica-integrator", daemon=True)
+        integration_thread.start()
     print(f"Fabrica247 Hub disponible en http://{host}:{port}/")
     if host in ("0.0.0.0", "::"):
         print("AVISO: escucha en todas las interfaces. Para acceso remoto usá una VPN privada (p. ej. Tailscale) o HTTPS detrás de un proxy; no publiques el puerto sin protección.")
     print(f"Contraseña de administrador: {app.password_path}")
+    if app.auto_push:
+        print(f"Integración automática activa: {app.integration_repo} -> origin/{app.base_branch}")
+        print("Cada tarea se publica en fabrica/task-ID; main nunca recibe push automático.")
+    else:
+        print("Integración automática desactivada; los patches quedan disponibles en el panel.")
     print("Ctrl+C para detener. Los workers se conectan hacia este servidor.")
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         print("\nDeteniendo Hub...")
     finally:
-        server.shutdown()
+        integration_stop.set()
+        if integration_thread is not None:
+            integration_thread.join(timeout=3)
         server.server_close()

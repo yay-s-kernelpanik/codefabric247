@@ -68,10 +68,15 @@ function renderTasks() {
   if (!state.tasks.length) { $("tasks").innerHTML = '<tr><td colspan="9" class="empty">Todavía no hay tareas.</td></tr>'; return; }
   $("tasks").innerHTML = state.tasks.map(t => {
     const status = String(t.status).toLowerCase();
+    const integration = t.integration_status || "NONE";
     const desc = t.cancel_requested ? "Detención solicitada al Worker; esperando confirmación" : (t.result || t.last_error || t.branch_name || "—");
     const patch = t.patch_available ? ` · <a class="patch-link" href="/api/admin/tasks/${t.id}/patch">Descargar patch</a>` : "";
-    const action = t.status === "FAILED" || t.status === "CANCELLED" ? `<button class="quiet" data-task-retry="${t.id}">Reintentar</button>` : (t.status === "PENDING" ? `<button class="quiet" data-task-cancel="${t.id}">Cancelar</button>` : (t.status === "RUNNING" && t.remote_cancel_allowed && !t.cancel_requested ? `<button class="quiet" data-task-cancel="${t.id}">Detener agente</button>` : "—"));
-    return `<tr><td>#${t.id}</td><td>${esc(t.project_name)}</td><td title="${esc(t.objective)}">${esc(t.objective.slice(0,90))}${t.objective.length>90?"…":""}</td><td class="task-prompt-cell"><textarea rows="2" maxlength="8000" data-task-prompt="${t.id}" placeholder="Instrucciones específicas">${esc(t.task_prompt || "")}</textarea><button class="quiet" data-save-task-prompt="${t.id}">Guardar</button></td><td><input class="priority-input" type="number" min="-100" max="100" value="${t.priority}" data-task-priority="${t.id}"></td><td><span class="badge ${status}">${esc(t.status)}</span></td><td>${esc(t.worker_name || "Sin asignar")}</td><td title="${esc(desc)}">${esc(String(desc).slice(0,90))}${patch}</td><td>${action}</td></tr>`;
+    const retryInfo = t.integration_attempts ? ` · ${Number(t.integration_attempts)} intentos` : "";
+    const gitInfo = integration !== "NONE" ? `<div class="worker-meta">Git: ${esc(integration)}${esc(retryInfo)}${t.integration_branch ? " · " + esc(t.integration_branch) : ""}</div>` : "";
+    const gitError = t.integration_error ? `<div class="error">${esc(t.integration_error.slice(0,110))}</div>` : "";
+    const retryGit = ["FAILED", "CONFLICT"].includes(integration) && t.patch_available ? `<button class="quiet" data-task-retry-integration="${t.id}">Reintentar push</button>` : "";
+    const action = retryGit || (t.status === "FAILED" || t.status === "CANCELLED" ? `<button class="quiet" data-task-retry="${t.id}">Reintentar</button>` : (t.status === "PENDING" ? `<button class="quiet" data-task-cancel="${t.id}">Cancelar</button>` : (t.status === "RUNNING" && t.remote_cancel_allowed && !t.cancel_requested ? `<button class="quiet" data-task-cancel="${t.id}">Detener agente</button>` : "—")));
+    return `<tr><td>#${t.id}</td><td>${esc(t.project_name)}</td><td title="${esc(t.objective)}">${esc(t.objective.slice(0,90))}${t.objective.length>90?"…":""}</td><td class="task-prompt-cell"><textarea rows="2" maxlength="8000" data-task-prompt="${t.id}" placeholder="Instrucciones específicas">${esc(t.task_prompt || "")}</textarea><button class="quiet" data-save-task-prompt="${t.id}">Guardar</button></td><td><input class="priority-input" type="number" min="-100" max="100" value="${t.priority}" data-task-priority="${t.id}"></td><td><span class="badge ${status}">${esc(t.status)}</span>${gitInfo}</td><td>${esc(t.worker_name || "Sin asignar")}</td><td title="${esc(desc)}">${esc(String(desc).slice(0,90))}${patch}${gitError}</td><td>${action}</td></tr>`;
   }).join("");
 }
 $("login-form").addEventListener("submit", async e => {
@@ -149,10 +154,11 @@ $("tasks").addEventListener("click", async e => {
     catch (err) { toast(err.message); }
     return;
   }
+  const retryIntegration = e.target.dataset.taskRetryIntegration;
   const retry = e.target.dataset.taskRetry, cancel = e.target.dataset.taskCancel;
-  const id = retry || cancel; if (!id) return;
-  const action = retry ? "retry" : "cancel";
-  try { await api(`/api/admin/tasks/${id}/${action}`, {method:"POST",body:"{}"}); await refresh(); toast(retry ? "Tarea reencolada" : "Tarea cancelada"); }
+  const id = retryIntegration || retry || cancel; if (!id) return;
+  const action = retryIntegration ? "retry-integration" : (retry ? "retry" : "cancel");
+  try { await api(`/api/admin/tasks/${id}/${action}`, {method:"POST",body:"{}"}); await refresh(); toast(retryIntegration ? "Integración reencolada" : (retry ? "Tarea reencolada" : "Tarea cancelada")); }
   catch (err) { toast(err.message); }
 });
 boot().catch(e => { showLogin(); toast(e.message); });

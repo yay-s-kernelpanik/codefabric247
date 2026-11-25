@@ -65,6 +65,8 @@ class Settings:
     infra_backoff: int
     allow_all: bool
     require_router: bool
+    hub_auto_push: bool
+    hub_base_branch: str
 
 
 def load_settings() -> Settings:
@@ -102,4 +104,6 @@ def load_settings() -> Settings:
         infra_backoff=get_int("INFRA_BACKOFF", 120),
         allow_all=get_bool("ALLOW_ALL_PERMISSIONS", True),
         require_router=get_bool("REQUIRE_ROUTER", True),
+        hub_auto_push=get_bool("HUB_AUTO_PUSH", False),
+        hub_base_branch=get("HUB_BASE_BRANCH", "main").strip() or "main",
     )

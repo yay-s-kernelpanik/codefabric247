@@ -1,0 +1,55 @@
+"""Integration tests with a local bare Git remote."""
+import subprocess,tempfile,unittest
+from pathlib import Path
+from fabrica.integration import IntegrationConflict,push_patch
+
+def git(args,cwd,strip=True):
+    p=subprocess.run(["git"]+list(args),cwd=str(cwd),capture_output=True,text=True)
+    if p.returncode: raise AssertionError(p.stderr or p.stdout)
+    return p.stdout.strip() if strip else p.stdout
+
+class IntegrationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=Path(tempfile.mkdtemp()); self.remote=self.tmp/"origin.git"; self.repo=self.tmp/"hub"
+        git(["init","--bare",str(self.remote)],self.tmp)
+        git(["init","--initial-branch=main",str(self.repo)],self.tmp)
+        git(["config","user.name","Test"],self.repo); git(["config","user.email","test@example.invalid"],self.repo)
+        (self.repo/"README.md").write_text("base\n",encoding="utf-8")
+        git(["add","README.md"],self.repo); git(["commit","-m","base"],self.repo)
+        git(["remote","add","origin",str(self.remote)],self.repo); git(["push","-u","origin","main"],self.repo)
+        self.base=git(["rev-parse","HEAD"],self.repo); self.worker=self.tmp/"worker"
+        git(["clone","--branch","main",str(self.remote),str(self.worker)],self.tmp)
+        git(["config","user.name","Worker"],self.worker); git(["config","user.email","worker@example.invalid"],self.worker)
+    def make_patch(self,path,content):
+        target=self.worker/path; target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_text(content,encoding="utf-8"); git(["add",path],self.worker); git(["commit","-m","worker"],self.worker)
+        patch=git(["diff","--binary",self.base+"..HEAD"],self.worker,strip=False)
+        if not patch.endswith("\n"):
+            raise AssertionError("git diff debe conservar el salto de línea final")
+        return patch
+    def test_push_is_idempotent_and_never_updates_main(self):
+        patch=self.make_patch("src/module.py","print('ok')\n")
+        result=push_patch(self.repo,42,"Add module",patch,"src/","main")
+        self.assertEqual(result["branch"],"fabrica/task-42")
+        self.assertEqual(git(["rev-parse","main"],self.repo),self.base)
+        self.assertTrue(git(["ls-remote","--heads","origin","refs/heads/fabrica/task-42"],self.repo))
+        self.assertTrue(push_patch(self.repo,42,"Add module",patch,"src/","main")["already_pushed"])
+    def test_scope_violation_is_rejected(self):
+        patch=self.make_patch("docs/no.txt","not allowed\n")
+        with self.assertRaises(IntegrationConflict): push_patch(self.repo,43,"Docs",patch,"src/","main")
+        self.assertEqual(git(["rev-parse","main"],self.repo),self.base)
+        self.assertFalse(git(["ls-remote","--heads","origin","refs/heads/fabrica/task-43"],self.repo))
+    def test_overlapping_unmerged_task_branches_are_rejected(self):
+        first_patch=self.make_patch("src/module.py","first version\n")
+        push_patch(self.repo,50,"First change",first_patch,"src/","main")
+        git(["reset","--hard",self.base],self.worker)
+        second_patch=self.make_patch("src/module.py","second version\n")
+        with self.assertRaises(IntegrationConflict):
+            push_patch(self.repo,51,"Second change",second_patch,"src/","main",
+                       reserved_branches=["fabrica/task-50"])
+        self.assertFalse(git(["ls-remote","--heads","origin","refs/heads/fabrica/task-51"],self.repo))
+
+    def test_secret_environment_file_is_rejected(self):
+        patch=self.make_patch(".env","SECRET=value\n")
+        with self.assertRaises(IntegrationConflict): push_patch(self.repo,44,"Secrets",patch,None,"main")
+if __name__=="__main__": unittest.main()

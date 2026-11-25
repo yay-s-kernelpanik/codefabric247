@@ -1,10 +1,12 @@
 """Pruebas del coordinador distribuido sin APIs ni modelos reales."""
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
+from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -25,6 +27,21 @@ class HubTests(unittest.TestCase):
         two = self.app.enroll_worker({"invite": self.invite, "name": "Worker B"})
         self.worker_a = {"id": one["worker_id"]}
         self.worker_b = {"id": two["worker_id"]}
+
+    def test_hub_startup_migrates_existing_database_columns(self):
+        legacy_home = self.tmp / "legacy-hub"
+        init_hub(legacy_home)
+        db_path = legacy_home / "hub" / "hub.sqlite3"
+        with sqlite3.connect(db_path) as conn:
+            for column in ("integration_error", "integration_commit", "integration_branch",
+                           "integration_not_before", "integration_attempts", "integration_status"):
+                conn.execute(f"ALTER TABLE tasks DROP COLUMN {column}")
+            conn.commit()
+        migrated = HubApplication(legacy_home)
+        with migrated.db() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+        self.assertTrue({"integration_status", "integration_attempts", "integration_not_before",
+                         "integration_branch", "integration_commit", "integration_error"}.issubset(columns))
 
     def test_invite_is_limited_and_tokens_are_not_stored_plaintext(self):
         invite = self.app.create_invite({"uses": 1, "hours": 1})["token"]
@@ -68,8 +85,92 @@ class HubTests(unittest.TestCase):
         data = self.app.dashboard_data()
         self.assertTrue(data["tasks"][0]["patch_available"])
         with self.app.db() as conn:
-            row = conn.execute("SELECT patch_text FROM tasks WHERE id=?", (tid,)).fetchone()
+            row = conn.execute("SELECT patch_text,integration_status FROM tasks WHERE id=?", (tid,)).fetchone()
             self.assertEqual(row["patch_text"], patch)
+            self.assertEqual(row["integration_status"], "PATCH_READY")
+
+    def test_auto_integration_queue_records_pushed_branch_and_commit(self):
+        self.app.auto_push = True
+        self.app.integration_repo = self.tmp / "target-repo"
+        tid = self.app.create_task({"project_slug": "proyecto-a", "objective": "Editar archivo",
+                                    "task_type": "implementation"})["id"]
+        with self.app.db() as conn:
+            conn.execute("UPDATE tasks SET status='RUNNING',assigned_worker=?,attempts=1 WHERE id=?",
+                         (self.worker_a["id"], tid))
+            conn.commit()
+        patch_text = "diff --git a/src/a.py b/src/a.py\\n"
+        self.app.finish_task(self.worker_a, tid, {"outcome": "done", "patch": patch_text})
+        with self.app.db() as conn:
+            row = conn.execute("SELECT integration_status FROM tasks WHERE id=?", (tid,)).fetchone()
+        self.assertEqual(row["integration_status"], "QUEUED")
+
+        with patch("fabrica.integration.push_patch",
+                   return_value={"branch": f"fabrica/task-{tid}", "commit": "abc123", "already_pushed": False}):
+            self.assertTrue(self.app.process_one_integration())
+        with self.app.db() as conn:
+            row = conn.execute("SELECT integration_status,integration_branch,integration_commit "
+                               "FROM tasks WHERE id=?", (tid,)).fetchone()
+        self.assertEqual(row["integration_status"], "PUSHED")
+        self.assertEqual(row["integration_branch"], f"fabrica/task-{tid}")
+        self.assertEqual(row["integration_commit"], "abc123")
+
+    def test_transient_integration_error_retries_with_backoff(self):
+        self.app.auto_push = True
+        self.app.integration_repo = self.tmp / "target-repo"
+        tid = self.app.create_task({"project_slug": "proyecto-a", "objective": "Editar archivo",
+                                    "task_type": "implementation"})["id"]
+        with self.app.db() as conn:
+            conn.execute("UPDATE tasks SET status='DONE',patch_text='patch',integration_status='QUEUED' WHERE id=?", (tid,))
+            conn.commit()
+        with patch("fabrica.integration.push_patch", side_effect=RuntimeError("temporary network failure")):
+            self.assertTrue(self.app.process_one_integration())
+        with self.app.db() as conn:
+            row = conn.execute("SELECT status,integration_status,integration_attempts,integration_not_before "
+                               "FROM tasks WHERE id=?", (tid,)).fetchone()
+            self.assertEqual(row["status"], "DONE")
+            self.assertEqual(row["integration_status"], "QUEUED")
+            self.assertEqual(row["integration_attempts"], 1)
+            self.assertTrue(row["integration_not_before"])
+            conn.execute("UPDATE tasks SET integration_not_before=? WHERE id=?",
+                         (stamp(utcnow() - timedelta(seconds=1)), tid))
+            conn.commit()
+        with patch("fabrica.integration.push_patch",
+                   return_value={"branch": f"fabrica/task-{tid}", "commit": "abc123", "already_pushed": False}):
+            self.assertTrue(self.app.process_one_integration())
+        with self.app.db() as conn:
+            row = conn.execute("SELECT integration_status,integration_attempts,integration_commit FROM tasks WHERE id=?",
+                               (tid,)).fetchone()
+        self.assertEqual(row["integration_status"], "PUSHED")
+        self.assertEqual(row["integration_attempts"], 1)
+        self.assertEqual(row["integration_commit"], "abc123")
+
+    def test_interrupted_integration_is_requeued_after_hub_restart(self):
+        tid = self.app.create_task({"project_slug": "proyecto-a", "objective": "Editar archivo",
+                                    "task_type": "implementation"})["id"]
+        with self.app.db() as conn:
+            conn.execute("UPDATE tasks SET status='DONE',patch_text='patch',integration_status='INTEGRATING' WHERE id=?",
+                         (tid,))
+            conn.commit()
+        self.app.recover_interrupted_integrations()
+        with self.app.db() as conn:
+            row = conn.execute("SELECT integration_status,integration_error FROM tasks WHERE id=?", (tid,)).fetchone()
+        self.assertEqual(row["integration_status"], "QUEUED")
+        self.assertIn("reiniciado", row["integration_error"])
+
+    def test_failed_integration_can_be_retried_without_rerunning_worker(self):
+        self.app.auto_push = True
+        self.app.integration_repo = self.tmp / "target-repo"
+        tid = self.app.create_task({"project_slug": "proyecto-a", "objective": "Editar archivo",
+                                    "task_type": "implementation"})["id"]
+        with self.app.db() as conn:
+            conn.execute("UPDATE tasks SET status='DONE',patch_text='patch',integration_status='FAILED' WHERE id=?",
+                         (tid,))
+            conn.commit()
+        self.assertEqual(self.app.task_action(tid, "retry-integration")["status"], "QUEUED")
+        with self.app.db() as conn:
+            row = conn.execute("SELECT status,integration_status FROM tasks WHERE id=?", (tid,)).fetchone()
+        self.assertEqual(row["status"], "DONE")
+        self.assertEqual(row["integration_status"], "QUEUED")
 
     def test_infrastructure_failure_does_not_consume_retry(self):
         tid = self.app.create_task({"project_slug": "proyecto-a", "objective": "Tarea", "task_type": "reasoning", "max_retries": 1})["id"]

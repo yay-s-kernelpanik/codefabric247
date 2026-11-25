@@ -211,7 +211,9 @@ def cmd_hub_init(args, cfg):
 
 def cmd_hub_serve(args, cfg):
     from .hub import serve_hub
-    serve_hub(cfg.home, host=args.host, port=args.port)
+    serve_hub(cfg.home, host=args.host, port=args.port,
+              integration_repo=cfg.target_repo, auto_push=cfg.hub_auto_push,
+              base_branch=cfg.hub_base_branch)
 
 
 def cmd_worker_join(args, cfg):

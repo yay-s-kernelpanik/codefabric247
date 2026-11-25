@@ -10,7 +10,7 @@
 - **Querés que una IA con acceso a GitHub prepare el repositorio:** [Prompt para IA de GitHub](docs/PROMPT_PARA_IA_GITHUB.md).
 - **Plantilla de contexto para copiar al repo objetivo:** [AGENTS.md.example](AGENTS.md.example).
 
-> Importante: la v3.0 entrega patches al Hub. El administrador los revisa, aplica, prueba y sube a GitHub; no hay push ni sincronización automática de los clones.
+> Integración automática opcional: con `TARGET_REPO` y `HUB_AUTO_PUSH=true` en el Hub, cada patch validado se convierte en un commit y se sube a una rama exclusiva `fabrica/task-ID`. Nunca se hace push automático a `main` ni se fuerzan ramas.
 
 **Fabrica247 es una plataforma distribuida para coordinar agentes de programación en varias computadoras.** Un Hub central administra proyectos, prioridades, cola de tareas e instrucciones. Cada computadora participante ejecuta su propio Worker, con sus propias APIs y/o IA local.
 
@@ -108,7 +108,7 @@ python -m fabrica worker run
 
 Los accesos directos `start-hub.bat` / `start-hub.sh` y `start-worker.bat` / `start-worker.sh` hacen estos pasos más cómodos. La configuración de prompts del dashboard permite ajustar instrucciones del proyecto, de cada Worker y de cada tarea sin editar archivos en las PCs remotas.
 
-La PC Mother tiene el panel de máxima administración: crear proyectos y tareas, editar prompts, cambiar prioridades, pausar/reanudar Workers que hayan aceptado el control, revocar equipos y descargar patches. No obtiene acceso secreto al escritorio ni a los archivos completos de las otras computadoras.
+La PC Mother tiene el panel de administración: crear proyectos y tareas, editar prompts, cambiar prioridades, pausar/reanudar Workers que hayan aceptado el control, revocar equipos, descargar patches y consultar el estado de integración Git. No obtiene acceso secreto al escritorio ni a los archivos completos de las otras computadoras.
 
 ## Conectar amigos por WhatsApp
 
@@ -173,7 +173,17 @@ También podés agregar un segundo proveedor online al arreglo `agent.providers`
 
 Cada PC debe tener un clon Git local del proyecto. El slug configurado en el Worker debe coincidir con el slug creado en el Hub, pero la ruta local puede ser diferente en cada computadora.
 
-Un Worker crea una rama y un worktree Git separados, ejecuta el agente y devuelve un patch. El administrador descarga el patch y lo revisa antes de aplicarlo:
+Un Worker crea un worktree Git separado, ejecuta su agente y devuelve un patch. Para activar commits y push automáticos, configurá en el Hub:
+
+```dotenv
+TARGET_REPO=/ruta/al/clon-del-repositorio
+HUB_AUTO_PUSH=true
+HUB_BASE_BRANCH=main
+```
+
+El Hub debe tener un clon Git con remoto `origin` autenticado para push. Cada tarea completada genera un commit y una rama `fabrica/task-ID`; la rama base nunca se modifica y no se usa force-push. Los cambios que chocan con otra rama de tarea pendiente quedan como `CONFLICT`; el integrador bloquea solapamientos de archivos hasta que la rama previa llegue a la base. Los errores temporales de Git/red se reintentan automáticamente con espera incremental (hasta 8 intentos); después quedan visibles para reintento manual. Cada push ejecuta los workflows CI del repositorio, pero no equivale a aprobar ni fusionar el cambio.
+
+En modo manual, el administrador puede descargar el patch y aplicarlo así:
 
 ```bash
 git apply fabrica-task-123.patch
@@ -210,3 +220,8 @@ python -m unittest discover -s tests -v
 ```
 
 Las pruebas usan un OpenCode simulado y un Hub local; no consumen APIs reales. La validación de los scripts `.bat`/PowerShell requiere ejecutarlos en Windows. Antes de producción hay que probar despliegue, reconexión y rendimiento en las PCs reales.
+
+
+## Descargas oficiales
+
+Los ZIP por edición y versión se publican en [GitHub Releases](https://github.com/yay-s-kernelpanik/codefabric247/releases). Elegí exactamente tu sistema y variante (Lite o Heavy). La guía de paquetes y publicación está en [docs/RELEASES.md](docs/RELEASES.md).
