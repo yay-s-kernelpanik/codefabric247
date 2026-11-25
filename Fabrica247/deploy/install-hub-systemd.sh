@@ -8,6 +8,12 @@ PORT="${FABRICA_HUB_PORT:-8765}"
 [ -n "$PY" ] || { echo "No se encontró Python." >&2; exit 1; }
 UNIT_DIR="$HOME/.config/systemd/user"
 mkdir -p "$UNIT_DIR"
+quote_systemd() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '"%s"' "$value"
+}
 cat > "$UNIT_DIR/fabrica247-hub.service" <<EOF
 [Unit]
 Description=Fabrica247 Hub dashboard and task coordinator
@@ -17,8 +23,8 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory="$(printf '%s' "$ROOT" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-ExecStart="$(printf '%s' "$PY" | sed 's/\\/\\\\/g; s/"/\\"/g')" -u -m fabrica hub serve --host "$(printf '%s' "$HOST" | sed 's/"/\\"/g')" --port "$(printf '%s' "$PORT" | sed 's/"/\\"/g')"
+WorkingDirectory=$(quote_systemd "$ROOT")
+ExecStart=$(quote_systemd "$PY") -u -m fabrica hub serve --host $(quote_systemd "$HOST") --port $(quote_systemd "$PORT")
 Restart=always
 RestartSec=5
 KillSignal=SIGINT

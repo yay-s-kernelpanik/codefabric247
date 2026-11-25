@@ -551,8 +551,8 @@ class HubApplication:
                 not_before = None
             conn.execute("""UPDATE tasks SET status=?,assigned_worker=NULL,lease_until=NULL,not_before=?,cancel_requested=0,
                             attempts=CASE WHEN ?='infra' THEN MAX(attempts-1,0) ELSE attempts END,
-                            branch_name=?,result=?,patch_text=?,integration_status=?,integration_branch=NULL,
-                            integration_commit=NULL,integration_error=NULL,last_error=?,updated_at=? WHERE id=?""",
+                            branch_name=?,result=?,patch_text=?,integration_status=?,integration_attempts=0,integration_not_before=NULL,
+                            integration_branch=NULL,integration_commit=NULL,integration_error=NULL,last_error=?,updated_at=? WHERE id=?""",
                          (status, not_before, outcome, branch or None, result or None, patch_text or None,
                           integration_status, error or None, stamp(), task_id))
             conn.execute("INSERT INTO audit_log(event,detail,created_at) VALUES(?,?,?)",
@@ -635,6 +635,8 @@ class HubApplication:
                     raise ValueError("Solo se pueden reintentar tareas FAILED o CANCELLED")
                 conn.execute("""UPDATE tasks SET status='PENDING',attempts=0,assigned_worker=NULL,
                                 lease_until=NULL,not_before=NULL,cancel_requested=0,last_error=NULL,result=NULL,patch_text=NULL,
+                                integration_status='NONE',integration_attempts=0,integration_not_before=NULL,
+                                integration_branch=NULL,integration_commit=NULL,integration_error=NULL,
                                 branch_name=NULL,updated_at=? WHERE id=?""",
                              (stamp(), task_id))
             elif action == "cancel":

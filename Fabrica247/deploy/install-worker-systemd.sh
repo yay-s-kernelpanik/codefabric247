@@ -23,8 +23,8 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory=$(printf '"%s"' "$ROOT")
-ExecStart=$(printf '"%s"' "$PY") -u -m fabrica worker run --config $(printf '"%s"' "$CONFIG")
+WorkingDirectory=$(quote_systemd "$ROOT")
+ExecStart=$(quote_systemd "$PY") -u -m fabrica worker run --config $(quote_systemd "$CONFIG")
 Restart=always
 RestartSec=10
 KillSignal=SIGINT

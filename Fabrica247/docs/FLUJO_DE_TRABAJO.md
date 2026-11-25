@@ -31,10 +31,14 @@ Reiniciá el Hub tras modificar `.env`. El panel muestra los estados `QUEUED`, `
 
 1. Mantener el Hub activo en una PC con conexión estable y el repositorio central clonado.
 2. Mantener los Workers conectados por VPN privada.
-3. Definir tareas pequeñas con rutas permitidas, entregables y criterios de aceptación.
-4. Comprobar el estado del agente y la integración en el dashboard.
-5. Revisar los resultados del CI y agrupar cambios compatibles mediante Pull Requests.
-6. Mantener copias de seguridad del directorio `hub/` y del repositorio central.
+3. En Linux, instalar el servicio del Hub con `bash deploy/install-hub-systemd.sh` y el del Worker con `bash deploy/install-worker-systemd.sh`.
+4. Para que los servicios de usuario arranquen al iniciar el equipo y continúen tras cerrar sesión, habilitar una sola vez: `sudo loginctl enable-linger "$USER"`. El script solo informa este paso; no ejecuta sudo por su cuenta.
+5. Verificar `systemctl --user status fabrica247-hub` y `systemctl --user status fabrica247-worker`; revisar logs con `journalctl --user -u fabrica247-hub -f` o `journalctl --user -u fabrica247-worker -f`.
+6. Definir tareas pequeñas con rutas permitidas, entregables y criterios de aceptación.
+7. Comprobar el estado del agente y la integración en el dashboard.
+8. Revisar CI antes de fusionar ramas y mantener copias de seguridad del directorio `hub/` y del repositorio central.
+
+El servicio reinicia automáticamente tras una salida del proceso. La suspensión del equipo, un corte de energía o la pérdida de red siguen requiriendo configuración de hardware y conectividad fuera de Fabrica247.
 
 ## Recuperación
 
