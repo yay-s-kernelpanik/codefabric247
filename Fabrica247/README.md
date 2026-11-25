@@ -210,8 +210,3 @@ python -m unittest discover -s tests -v
 ```
 
 Las pruebas usan un OpenCode simulado y un Hub local; no consumen APIs reales. La validación de los scripts `.bat`/PowerShell requiere ejecutarlos en Windows. Antes de producción hay que probar despliegue, reconexión y rendimiento en las PCs reales.
-
-
-## Descargas oficiales
-
-Los ZIP por edición y versión se publican en [GitHub Releases](https://github.com/yay-s-kernelpanik/codefabric247/releases). Elegí exactamente tu sistema y variante (Lite o Heavy). La guía de paquetes y publicación está en [docs/RELEASES.md](docs/RELEASES.md).
