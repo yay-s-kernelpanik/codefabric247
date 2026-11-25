@@ -577,11 +577,18 @@ class HubApplication:
             if cur.rowcount != 1:
                 conn.rollback()
                 return False
+            reserved_branches = [
+                item["integration_branch"] for item in conn.execute(
+                    "SELECT integration_branch FROM tasks WHERE integration_status='PUSHED' "
+                    "AND integration_branch IS NOT NULL AND id<>?", (task["id"],)
+                )
+            ]
             conn.commit()
         from .integration import IntegrationConflict, push_patch
         try:
             result = push_patch(self.integration_repo, int(task['id']), task['objective'],
-                                task.get('patch_text') or '', task.get('allowed_files'), self.base_branch)
+                                task.get('patch_text') or '', task.get('allowed_files'), self.base_branch,
+                                reserved_branches=reserved_branches)
             state, error = 'PUSHED', None
             branch, commit = result['branch'], result['commit']
         except IntegrationConflict as exc:

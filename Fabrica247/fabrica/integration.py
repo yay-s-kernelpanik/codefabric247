@@ -1,6 +1,6 @@
 """Safe, serialized publication of Worker patches to per-task Git branches."""
 from __future__ import annotations
-import fnmatch, os, subprocess, tempfile
+import fnmatch, os, re, subprocess, tempfile
 from pathlib import Path
 from .gitops import GitError, git, repo_ready
 
@@ -42,7 +42,7 @@ def _has_marker(repo,ref,task_id):
     rc,out,_=_run(["show","-s","--format=%B",ref],repo)
     return rc==0 and f"Fabrica247-Task: {task_id}" in out
 
-def push_patch(repo_path,task_id,objective,patch,allowed_files=None,base_branch="main"):
+def push_patch(repo_path,task_id,objective,patch,allowed_files=None,base_branch="main",reserved_branches=None):
     """Apply one patch on origin/base and push fabrica/task-ID, never base itself."""
     repo=Path(repo_path).expanduser().resolve()
     if not repo_ready(repo): raise IntegrationError("TARGET_REPO debe ser un repositorio Git con commits")
@@ -83,6 +83,32 @@ def push_patch(repo_path,task_id,objective,patch,allowed_files=None,base_branch=
             bad=[p for p in changed if not _allowed(p,patterns)]
             if not changed: raise IntegrationConflict("El patch no contiene cambios nuevos")
             if bad: raise IntegrationConflict("Rutas no permitidas o protegidas: "+", ".join(bad[:8]))
+
+            # Keep unmerged task branches from silently modifying the same files.
+            # A branch already represented in the current base (including squash
+            # merges with identical trees) does not reserve paths any longer.
+            for reserved in reserved_branches or []:
+                reserved = str(reserved or "")
+                if reserved == branch or not re.fullmatch(r"fabrica/task-[0-9]+", reserved):
+                    continue
+                reserved_ref = "refs/remotes/origin/" + reserved
+                rc, _, _ = _run(["fetch", "--no-tags", "origin",
+                                 f"+refs/heads/{reserved}:{reserved_ref}"], repo)
+                if rc:
+                    continue  # deleted remote branch
+                if _run(["merge-base", "--is-ancestor", reserved_ref, base_ref], repo)[0] == 0:
+                    continue
+                reserved_paths = set(filter(None, _git(["diff", "--name-only", base_ref, reserved_ref], repo).splitlines()))
+                overlaps = sorted(
+                    current for current in changed
+                    for prior in reserved_paths
+                    if current == prior or current.startswith(prior + "/") or prior.startswith(current + "/")
+                )
+                if overlaps:
+                    raise IntegrationConflict(
+                        "CONFLICT: rutas compartidas con " + reserved + ": " + ", ".join(overlaps[:8])
+                    )
+
             title=" ".join(str(objective).split())[:100] or "cambios de tarea"
             _git(["-c","user.name=Fabrica247","-c","user.email=fabrica247@localhost",
                   "commit","--no-verify","-m",f"Fabrica247 task #{task_id}: {title}",

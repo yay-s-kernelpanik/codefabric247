@@ -39,6 +39,16 @@ class IntegrationTests(unittest.TestCase):
         with self.assertRaises(IntegrationConflict): push_patch(self.repo,43,"Docs",patch,"src/","main")
         self.assertEqual(git(["rev-parse","main"],self.repo),self.base)
         self.assertFalse(git(["ls-remote","--heads","origin","refs/heads/fabrica/task-43"],self.repo))
+    def test_overlapping_unmerged_task_branches_are_rejected(self):
+        first_patch=self.make_patch("src/module.py","first version\n")
+        push_patch(self.repo,50,"First change",first_patch,"src/","main")
+        git(["reset","--hard",self.base],self.worker)
+        second_patch=self.make_patch("src/module.py","second version\n")
+        with self.assertRaises(IntegrationConflict):
+            push_patch(self.repo,51,"Second change",second_patch,"src/","main",
+                       reserved_branches=["fabrica/task-50"])
+        self.assertFalse(git(["ls-remote","--heads","origin","refs/heads/fabrica/task-51"],self.repo))
+
     def test_secret_environment_file_is_rejected(self):
         patch=self.make_patch(".env","SECRET=value\n")
         with self.assertRaises(IntegrationConflict): push_patch(self.repo,44,"Secrets",patch,None,"main")
