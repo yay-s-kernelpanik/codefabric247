@@ -18,7 +18,7 @@ class IntegrationTests(unittest.TestCase):
         git(["add","README.md"],self.repo); git(["commit","-m","base"],self.repo)
         git(["remote","add","origin",str(self.remote)],self.repo); git(["push","-u","origin","main"],self.repo)
         self.base=git(["rev-parse","HEAD"],self.repo); self.worker=self.tmp/"worker"
-        git(["clone",str(self.remote),str(self.worker)],self.tmp)
+        git(["clone","--branch","main",str(self.remote),str(self.worker)],self.tmp)
         git(["config","user.name","Worker"],self.worker); git(["config","user.email","worker@example.invalid"],self.worker)
     def make_patch(self,path,content):
         target=self.worker/path; target.parent.mkdir(parents=True,exist_ok=True)
