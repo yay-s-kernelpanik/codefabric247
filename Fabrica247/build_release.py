@@ -14,7 +14,7 @@ EDITIONS = {
     "linux-heavy": ("Linux-Heavy", "install-linux-heavy.sh", "linux-heavy.json", "Linux"),
 }
 COMMON_FILES = (
-    "README.md", "requirements.txt", "services.json", "worker.example.json",
+    ".env.example", "README.md", "requirements.txt", "services.json", "worker.example.json",
     "worker.env.example", "CONTRIBUTING.md", "PROVIDERS.md", "AGENTS.md.example",
 )
 COMMON_DIRS = ("fabrica", "docs")

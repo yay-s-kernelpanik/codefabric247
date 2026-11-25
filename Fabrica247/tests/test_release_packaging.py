@@ -14,7 +14,7 @@ class ReleasePackagingTests(unittest.TestCase):
         self.root.mkdir()
         for path in (
             "fabrica/__main__.py", "fabrica/__init__.py", "fabrica/web/index.html",
-            "docs/guide.md", "README.md", "requirements.txt", "services.json",
+            "docs/guide.md", ".env.example", "README.md", "requirements.txt", "services.json",
             "worker.example.json", "worker.env.example", "CONTRIBUTING.md",
             "PROVIDERS.md", "AGENTS.md.example",
         ):
@@ -41,6 +41,7 @@ class ReleasePackagingTests(unittest.TestCase):
                     self.assertEqual([name.rsplit("/", 1)[-1] for name in profiles], [profile])
                     self.assertFalse(any(name.endswith(".pyc") for name in names))
                     self.assertFalse(any(name.endswith("/.env") for name in names))
+                    self.assertTrue(any(name.endswith("/.env.example") for name in names))
                     self.assertFalse(any("worker.token" in name for name in names))
 
     def test_invalid_version_is_rejected(self):

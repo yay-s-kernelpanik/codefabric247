@@ -232,7 +232,7 @@ class Worker:
         reply = self.request("/api/worker/heartbeat", data={
             "projects": list(self.projects), "capabilities": self.capabilities,
             "current_task_id": self.current_task, "platform": platform.platform(),
-            "version": "3.0.0", "agent": self.cfg.get("agent", {}).get("model", "disabled"),
+            "version": "3.0.1", "agent": self.cfg.get("agent", {}).get("model", "disabled"),
             "cpu": platform.processor(), "cores": os.cpu_count() or 0,
             "remote_control": self.remote_control_enabled
         })
