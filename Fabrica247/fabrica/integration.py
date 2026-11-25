@@ -59,7 +59,7 @@ def push_patch(repo_path,task_id,objective,patch,allowed_files=None,base_branch=
         if rc==0 and _has_marker(repo,remote_ref,task_id):
             return {"branch":branch,"commit":remote_sha,"already_pushed":True}
         raise IntegrationError("La rama remota reservada para esta tarea existe con otro contenido")
-    _git(["fetch","--no-tags","origin",base_branch],repo)
+    _git(["fetch","--no-tags","origin",f"+refs/heads/{base_branch}:refs/remotes/origin/{base_branch}"],repo)
     base_ref="refs/remotes/origin/"+base_branch
     if _run(["rev-parse","--verify",base_ref],repo)[0]: raise IntegrationError("No se encontró origin/"+base_branch)
     if _run(["show-ref","--verify",local_ref],repo)[0]==0:
